@@ -1,0 +1,240 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Multiplayer Arena</title>
+
+<script src="https://unpkg.com/peerjs@1.5.2/dist/peerjs.min.js"></script>
+
+<style>
+body {
+    margin: 0;
+    font-family: Arial;
+    background: #0f172a;
+    color: white;
+}
+
+#menu {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    height: 100vh;
+}
+
+input, button {
+    padding: 12px;
+    margin: 5px;
+    border-radius: 10px;
+    border: none;
+}
+
+button {
+    background: #3b82f6;
+    color: white;
+}
+
+#game {
+    display: none;
+}
+
+canvas {
+    background: #111827;
+    display: block;
+}
+
+#hud {
+    position: absolute;
+    top: 10px;
+    left: 10px;
+}
+
+#joystick {
+    position: fixed;
+    bottom: 30px;
+    left: 30px;
+    width: 120px;
+    height: 120px;
+    background: rgba(255,255,255,0.1);
+    border-radius: 50%;
+}
+
+#stick {
+    width: 50px;
+    height: 50px;
+    background: #3b82f6;
+    border-radius: 50%;
+    position: relative;
+    top: 35px;
+    left: 35px;
+}
+</style>
+</head>
+
+<body>
+
+<div id="menu">
+    <h1>Multiplayer Arena</h1>
+    <input id="name" placeholder="Username">
+    <input id="room" placeholder="Room ID">
+    <button onclick="createRoom()">Create Room</button>
+    <button onclick="joinRoom()">Join Room</button>
+</div>
+
+<div id="game">
+    <canvas id="c"></canvas>
+    <div id="hud"></div>
+
+    <div id="joystick">
+        <div id="stick"></div>
+    </div>
+</div>
+
+<script>
+let canvas = document.getElementById("c");
+let ctx = canvas.getContext("2d");
+
+canvas.width = window.innerWidth;
+canvas.height = window.innerHeight;
+
+let player = {
+    x: 200,
+    y: 200,
+    color: "cyan",
+    name: "",
+    vx: 0,
+    vy: 0
+};
+
+let players = {};
+let connections = [];
+
+let peer;
+
+function createRoom(){
+    start(true);
+}
+
+function joinRoom(){
+    start(false);
+}
+
+function start(isHost){
+    let name = document.getElementById("name").value;
+    let room = document.getElementById("room").value;
+
+    if(!name || !room) return alert("Fill all fields");
+
+    player.name = name;
+
+    document.getElementById("menu").style.display = "none";
+    document.getElementById("game").style.display = "block";
+
+    peer = new Peer(isHost ? room : undefined);
+
+    peer.on("open", id => {
+        if(!isHost){
+            let conn = peer.connect(room);
+            setupConn(conn);
+        }
+    });
+
+    peer.on("connection", conn => {
+        setupConn(conn);
+    });
+
+    gameLoop();
+}
+
+function setupConn(conn){
+    connections.push(conn);
+
+    conn.on("data", data => {
+        players[data.id] = data;
+    });
+}
+
+function sendData(){
+    let data = {
+        id: peer.id,
+        x: player.x,
+        y: player.y,
+        name: player.name,
+        color: player.color
+    };
+
+    connections.forEach(c => c.send(data));
+}
+
+function gameLoop(){
+    requestAnimationFrame(gameLoop);
+
+    player.x += player.vx;
+    player.y += player.vy;
+
+    sendData();
+
+    ctx.clearRect(0,0,canvas.width,canvas.height);
+
+    drawPlayer(player);
+
+    for(let id in players){
+        drawPlayer(players[id]);
+    }
+}
+
+function drawPlayer(p){
+    ctx.fillStyle = p.color;
+    ctx.beginPath();
+    ctx.arc(p.x, p.y, 20, 0, Math.PI*2);
+    ctx.fill();
+
+    ctx.fillStyle = "white";
+    ctx.fillText(p.name, p.x-15, p.y-30);
+}
+
+/* MOBILE JOYSTICK */
+let stick = document.getElementById("stick");
+let joystick = document.getElementById("joystick");
+
+joystick.addEventListener("touchmove", e=>{
+    let rect = joystick.getBoundingClientRect();
+    let x = e.touches[0].clientX - rect.left - 60;
+    let y = e.touches[0].clientY - rect.top - 60;
+
+    let dist = Math.sqrt(x*x+y*y);
+    if(dist > 40){
+        x *= 40/dist;
+        y *= 40/dist;
+    }
+
+    stick.style.left = (x+35) + "px";
+    stick.style.top = (y+35) + "px";
+
+    player.vx = x * 0.1;
+    player.vy = y * 0.1;
+});
+
+joystick.addEventListener("touchend", ()=>{
+    stick.style.left = "35px";
+    stick.style.top = "35px";
+    player.vx = 0;
+    player.vy = 0;
+});
+
+/* PC CONTROLS */
+document.addEventListener("keydown", e=>{
+    if(e.key=="w") player.vy=-3;
+    if(e.key=="s") player.vy=3;
+    if(e.key=="a") player.vx=-3;
+    if(e.key=="d") player.vx=3;
+});
+
+document.addEventListener("keyup", e=>{
+    player.vx=0;
+    player.vy=0;
+});
+</script>
+
+</body>
+</html>
